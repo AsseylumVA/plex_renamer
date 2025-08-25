@@ -100,7 +100,6 @@ class PlexRenamerGUI(QWidget):
         dialog = QFileDialog(self, "Выберите файл или папку")
         dialog.setFileMode(QFileDialog.FileMode.AnyFile)
         dialog.setOption(QFileDialog.Option.ShowDirsOnly, False)
-        dialog.setOption(QFileDialog.Option.DontUseNativeDialog, False)
         if dialog.exec():
             selected = dialog.selectedFiles()
             if selected:
@@ -130,7 +129,7 @@ class PlexRenamerGUI(QWidget):
         self.stop_event.set()
 
     def _worker_thread(self, path: str, apply_flag: bool):
-        def cb(message: str = None, progress: int = None):
+        def cb(message=None, progress=None):
             if message:
                 self.emitter.log.emit(str(message))
             if progress is not None:
