@@ -3,21 +3,25 @@ import re
 
 VIDEO_EXT = {'.mp4', '.mkv', '.avi', '.mov'}
 
+
 def clean_for_title(s: str) -> str:
     s = re.sub(r'[._]+', ' ', s)
     s = re.sub(r'[\[\]\(\){}_]', ' ', s)
     s = re.sub(r'\s+', ' ', s)
     return s.strip(' -._')
 
+
 def parse_episode_number(filename: str) -> int:
     """Попытка достать номер эпизода из имени файла"""
     m = re.match(r'^\s*(\d{1,3})', filename)
     return int(m.group(1)) if m else 1
 
+
 def build_movie_name(file_path: Path) -> str:
     title = clean_for_title(file_path.parent.name)
     ext = file_path.suffix
     return f"{title}{ext}"
+
 
 def build_episode_name(file_path: Path, episode_number: int) -> str:
     show_name = clean_for_title(file_path.parent.name)
@@ -26,8 +30,10 @@ def build_episode_name(file_path: Path, episode_number: int) -> str:
     ext = file_path.suffix
     return f"{show_name} - S{season_number:02}E{episode_number:02} - {ep_title}{ext}"
 
+
 def is_video_file(path: Path) -> bool:
     return path.is_file() and path.suffix.lower() in VIDEO_EXT
+
 
 def run_renamer(path, apply=False, callback=None):
     """
@@ -36,6 +42,7 @@ def run_renamer(path, apply=False, callback=None):
     callback: callable, callback(str) для логов
     """
     path = Path(path)
+
     def log(msg):
         if callback:
             callback(str(msg))

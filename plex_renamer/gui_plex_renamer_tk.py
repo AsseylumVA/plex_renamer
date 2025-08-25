@@ -1,7 +1,10 @@
 import threading
-from tkinter import Tk, Button, Checkbutton, IntVar, Text, END, filedialog, Label, Entry, Scrollbar, RIGHT, Y, LEFT, BOTH, Frame
+from tkinter import (Tk, Button, Checkbutton, IntVar, Text, END,
+                     filedialog, Label, Entry, Scrollbar, RIGHT,
+                     Y, LEFT, BOTH, Frame)
 from pathlib import Path
-from core import run_renamer  # Импортируем функцию из core.py
+from plex_renamer.core import run_renamer  # Импортируем функцию из core.py
+
 
 def append_log(msg):
     """Вывод лог-сообщения в Text"""
@@ -10,15 +13,19 @@ def append_log(msg):
     log_text.see(END)
     log_text.config(state='disabled')
 
+
 def choose_path():
     """Диалог выбора файла или папки"""
-    selected_file = filedialog.askopenfilename(title="Выберите файл")  # сначала файл
+    selected_file = filedialog.askopenfilename(
+        title="Выберите файл")  # сначала файл
     if selected_file:
         path_var.set(selected_file)
         return
-    selected_dir = filedialog.askdirectory(title="Выберите папку")      # если файл не выбран, каталог
+    selected_dir = filedialog.askdirectory(
+        title="Выберите папку")  # если файл не выбран, каталог
     if selected_dir:
         path_var.set(selected_dir)
+
 
 def start_renamer():
     """Запуск переименования в отдельном потоке"""
@@ -36,6 +43,7 @@ def start_renamer():
     start_btn.config(state='disabled')
     threading.Thread(target=worker, daemon=True).start()
 
+
 # --- Создание окна ---
 root = Tk()
 root.title("Plex Renamer")
@@ -51,7 +59,8 @@ path_frame.pack(pady=5)
 
 # Опция apply
 apply_var = IntVar()
-Checkbutton(root, text="Применить изменения (--apply)", variable=apply_var).pack()
+Checkbutton(root, text="Применить изменения (--apply)",
+            variable=apply_var).pack()
 
 # Кнопка запуска
 start_btn = Button(root, text="Запустить", command=start_renamer)
@@ -61,7 +70,8 @@ start_btn.pack(pady=5)
 log_frame = Frame(root)
 scrollbar = Scrollbar(log_frame)
 scrollbar.pack(side=RIGHT, fill=Y)
-log_text = Text(log_frame, width=80, height=20, yscrollcommand=scrollbar.set, state='disabled')
+log_text = Text(log_frame, width=80, height=20, yscrollcommand=scrollbar.set,
+                state='disabled')
 log_text.pack(side=LEFT, fill=BOTH, expand=True)
 scrollbar.config(command=log_text.yview)
 log_frame.pack(padx=5, pady=5, fill=BOTH, expand=True)
