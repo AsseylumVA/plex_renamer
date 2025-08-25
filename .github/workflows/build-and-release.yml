@@ -1,0 +1,195 @@
+name: Test, Build & Release (Windows + Linux)
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch: {}
+
+env:
+  PYTHON_VERSION: '3.12'
+
+jobs:
+  test-linux:
+    name: Test Linux
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install package & dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+          pip install -r requirements.txt
+
+      - name: Run tests
+        run: pytest -q
+
+  test-windows:
+    name: Test Windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install package & dependencies
+        shell: powershell
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+          pip install -r requirements.txt
+
+      - name: Run tests
+        shell: powershell
+        run: pytest -q
+
+  build-windows:
+    name: Build Windows .exe
+    runs-on: windows-latest
+    needs: test-windows
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: pip install pyinstaller
+
+      - name: Build Windows onefile exe
+        run: pyinstaller --noconfirm --onefile --windowed --name PlexRenamer plex_renamer/gui_plex_renamer_tk.py
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PlexRenamer-windows
+          path: dist/PlexRenamer.exe
+
+  build-linux:
+    name: Build Linux onefile + .deb
+    runs-on: ubuntu-latest
+    needs: test-linux
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system deps for packaging
+        run: sudo apt-get update && sudo apt-get install -y ruby ruby-dev build-essential fakeroot
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install Python deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller
+
+      - name: Build Linux onefile
+        run: pyinstaller --noconfirm --onefile --name PlexRenamer-linux plex_renamer/gui_plex_renamer_tk.py
+
+      - name: Prepare packaging directory
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/}
+          if [ -z "$VERSION" ]; then VERSION=0.0.0-dev; fi
+          PKG_DIR=package_root
+          rm -rf $PKG_DIR
+          mkdir -p $PKG_DIR/usr/bin
+          cp dist/PlexRenamer-linux $PKG_DIR/usr/bin/plexrenamer
+          chmod +x $PKG_DIR/usr/bin/plexrenamer
+
+      - name: Install fpm for .deb
+        run: sudo gem install --no-document fpm
+
+      - name: Build .deb package
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/}
+          if [ -z "$VERSION" ]; then VERSION=0.0.0-dev; fi
+          ARCH=amd64
+          fpm -s dir -t deb \
+              -n plexrenamer \
+              -v "$VERSION" \
+              --architecture "$ARCH" \
+              --description "Plex Renamer - cross-platform renamer" \
+              -C package_root \
+              usr/bin/plexrenamer
+
+      - name: Upload Linux artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: PlexRenamer-linux
+          path: |
+            dist/PlexRenamer-linux
+            plexrenamer_*.deb
+
+  create_release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: [build-windows, build-linux]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download Windows artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: PlexRenamer-windows
+          path: artifacts/windows
+
+      - name: Download Linux artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: PlexRenamer-linux
+          path: artifacts/linux
+
+      - name: Create GitHub Release
+        id: create_release
+        uses: actions/create-release@v1
+        with:
+          tag_name: ${{ github.ref_name }}
+          release_name: Release ${{ github.ref_name }}
+          body: "Automated release for ${{ github.ref_name }}"
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Windows exe to Release
+        uses: actions/upload-release-asset@v1
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: artifacts/windows/PlexRenamer.exe
+          asset_name: PlexRenamer-windows-${{ github.ref_name }}.exe
+          asset_content_type: application/octet-stream
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Linux onefile to Release
+        uses: actions/upload-release-asset@v1
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: artifacts/linux/PlexRenamer-linux
+          asset_name: PlexRenamer-linux-${{ github.ref_name }}.bin
+          asset_content_type: application/octet-stream
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Linux .deb to Release
+        uses: actions/upload-release-asset@v1
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: artifacts/linux/plexrenamer_*.deb
+          asset_name: plexrenamer_${{ github.ref_name }}_amd64.deb
+          asset_content_type: application/vnd.debian.binary-package
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
