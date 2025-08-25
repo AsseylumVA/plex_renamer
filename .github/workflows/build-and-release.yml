@@ -4,7 +4,11 @@ on:
   push:
     tags:
       - 'v*'
-  workflow_dispatch: {}
+  workflow_dispatch: { }
+
+permissions:
+  contents: write
+  packages: write
 
 env:
   PYTHON_VERSION: '3.12'
@@ -70,11 +74,18 @@ jobs:
       - name: Build Windows onefile exe
         run: pyinstaller --noconfirm --onefile --windowed --name PlexRenamer plex_renamer/gui_plex_renamer_tk.py
 
+      # >>> STAGE WINDOWS ARTIFACT (убираем папку dist из артефакта)
+      - name: Stage Windows artifact
+        shell: powershell
+        run: |
+          New-Item -ItemType Directory -Force -Path artifacts\windows | Out-Null
+          Copy-Item -LiteralPath dist\PlexRenamer.exe -Destination artifacts\windows\PlexRenamer.exe -Force
+
       - name: Upload Windows artifact
         uses: actions/upload-artifact@v4
         with:
           name: PlexRenamer-windows
-          path: dist/PlexRenamer.exe
+          path: artifacts/windows/PlexRenamer.exe
 
   build-linux:
     name: Build Linux onefile + .deb
@@ -112,6 +123,7 @@ jobs:
       - name: Install fpm for .deb
         run: sudo gem install --no-document fpm
 
+      # ВАЖНО: задаём фиксированное имя и место для .deb в dist/
       - name: Build .deb package
         run: |
           VERSION=${GITHUB_REF#refs/tags/}
@@ -123,20 +135,28 @@ jobs:
               --architecture "$ARCH" \
               --description "Plex Renamer - cross-platform renamer" \
               -C package_root \
+              -p "dist/plexrenamer_${VERSION}_${ARCH}.deb" \
               usr/bin/plexrenamer
+
+      # >>> STAGE LINUX ARTIFACTS (копируем в artifacts/linux/ с предсказуемыми именами)
+      - name: Stage Linux artifacts
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/}
+          if [ -z "$VERSION" ]; then VERSION=0.0.0-dev; fi
+          mkdir -p artifacts/linux
+          cp dist/PlexRenamer-linux artifacts/linux/PlexRenamer-linux
+          cp "dist/plexrenamer_${VERSION}_amd64.deb" "artifacts/linux/plexrenamer_${VERSION}_amd64.deb"
 
       - name: Upload Linux artifacts
         uses: actions/upload-artifact@v4
         with:
           name: PlexRenamer-linux
-          path: |
-            dist/PlexRenamer-linux
-            plexrenamer_*.deb
+          path: artifacts/linux
 
   create_release:
     name: Create GitHub Release
     runs-on: ubuntu-latest
-    needs: [build-windows, build-linux]
+    needs: [ build-windows, build-linux ]
     steps:
       - uses: actions/checkout@v4
 
@@ -162,7 +182,7 @@ jobs:
           draft: false
           prerelease: false
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.RENAMER_SECRET }}
 
       - name: Upload Windows exe to Release
         uses: actions/upload-release-asset@v1
@@ -172,7 +192,7 @@ jobs:
           asset_name: PlexRenamer-windows-${{ github.ref_name }}.exe
           asset_content_type: application/octet-stream
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.RENAMER_SECRET }}
 
       - name: Upload Linux onefile to Release
         uses: actions/upload-release-asset@v1
@@ -182,14 +202,14 @@ jobs:
           asset_name: PlexRenamer-linux-${{ github.ref_name }}.bin
           asset_content_type: application/octet-stream
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.RENAMER_SECRET }}
 
       - name: Upload Linux .deb to Release
         uses: actions/upload-release-asset@v1
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: artifacts/linux/plexrenamer_*.deb
+          asset_path: artifacts/linux/plexrenamer_${{ github.ref_name }}_amd64.deb
           asset_name: plexrenamer_${{ github.ref_name }}_amd64.deb
           asset_content_type: application/vnd.debian.binary-package
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.RENAMER_SECRET }}
