@@ -14,6 +14,7 @@ from plex_renamer.core import run_renamer
 class LogEmitter(QObject):
     log = pyqtSignal(str)
     progress = pyqtSignal(int)
+    finished = pyqtSignal()  # сигнал окончания работы воркера
 
 
 class PlexRenamerGUI(QWidget):
@@ -25,6 +26,8 @@ class PlexRenamerGUI(QWidget):
         self.emitter = LogEmitter()
         self.emitter.log.connect(self.append_log)
         self.emitter.progress.connect(self.update_progress)
+        # подключаем finished к разблокировке UI
+        self.emitter.finished.connect(lambda: self._set_ui_running(False))
 
         self.stop_event = threading.Event()
 
@@ -93,7 +96,11 @@ class PlexRenamerGUI(QWidget):
         self.log.append(text)
 
     def update_progress(self, value: int):
-        self.progress_bar.setValue(value)
+        try:
+            v = int(value)
+        except Exception:
+            return
+        self.progress_bar.setValue(v)
 
     def choose_path(self):
         dialog = QFileDialog(self, "Выберите файл или папку")
@@ -127,11 +134,21 @@ class PlexRenamerGUI(QWidget):
         self.stop_event.set()
 
     def _worker_thread(self, path: str, apply_flag: bool):
+        # безопасный wrapper callback: ловим исключения при эмиссии сигналов
         def cb(message=None, progress=None):
-            if message:
-                self.emitter.log.emit(str(message))
-            if progress is not None:
-                self.emitter.progress.emit(progress)
+            try:
+                if message:
+                    # защитимся от None/нестрок
+                    self.emitter.log.emit(str(message))
+            except Exception:
+                # не даём падать воркеру из-за проблем с GUI сигналом
+                pass
+            try:
+                if progress is not None:
+                    # нормализуем int
+                    self.emitter.progress.emit(int(progress))
+            except Exception:
+                pass
 
         try:
             self.emitter.log.emit(
@@ -140,12 +157,25 @@ class PlexRenamerGUI(QWidget):
                         stop_flag=self.stop_event)
             self.emitter.log.emit("✅ Работа завершена.")
         except Exception as e:
-            self.emitter.log.emit(f"❗ Ошибка: {e}")
+            # логируем ошибку перед завершением
+            try:
+                self.emitter.log.emit(f"❗ Ошибка: {e}")
+            except Exception:
+                print("Ошибка в воркере:", e)
         finally:
-            from PyQt6.QtCore import QTimer
-            QTimer.singleShot(0, lambda: self._set_ui_running(False))
+            # Всегда эмитим finished — GUI в main thread разблокирует кнопки
+            try:
+                self.emitter.finished.emit()
+            except Exception:
+                # fallback: если сигнал по каким-то причинам не сработал, разблокируем напрямую через QTimer
+                from PyQt6.QtCore import QTimer
+                QTimer.singleShot(0, lambda: self._set_ui_running(False))
 
     def _set_ui_running(self, running: bool):
+        """
+        running=True  -> операция в процессе: блокируем Dry/Apply, включаем Stop
+        running=False -> операция завершена: разблокируем Dry/Apply, выключаем Stop
+        """
         self.dry_run_btn.setEnabled(not running)
         self.apply_btn.setEnabled(not running)
         self.stop_btn.setEnabled(running)
