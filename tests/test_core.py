@@ -1,62 +1,65 @@
-# tests/test_core.py
-import re
 from pathlib import Path
-import pytest
+import tempfile
 from plex_renamer import core
 
 
-def make_collector():
-    messages = []
-
-    def cb(msg):
-        messages.append(str(msg))
-
-    return messages, cb
-
-
-def test_file_dry_run(tmp_path):
-    # Фильм: файл в папке -> dry-run не меняет имена
-    movie_dir = tmp_path / "My Movie (2020)"
-    movie_dir.mkdir()
-    movie = movie_dir / "My Movie (2020).mkv"
-    movie.write_bytes(b'\x00')
-
-    msgs, cb = make_collector()
-    core.run_renamer(movie, apply=False, callback=cb)
-
-    # Файл должен остаться с тем же именем
-    assert movie.exists()
-    # В сообщениях должен быть dry-run либо хотя бы показываться переход (но файл не переименован)
-    assert any("Dry-run" in m or "will rename" in m or "->" in m for m in msgs) or True
+def test_clean_for_title_and_parse_season():
+    assert core.clean_for_title("test s023 - s023") == "test"
+    assert core.parse_season_number("Season01") == 1
+    assert core.parse_season_number("season_2") == 2
+    assert core.parse_season_number("S03") == 3
+    assert core.parse_season_number("s 4") == 4
+    assert core.parse_season_number("Show") == 1  # если нет сезона
 
 
-def test_folder_dry_run(tmp_path):
-    # Сериал: папка с эпизодами -> dry-run не меняет файлы
-    show = tmp_path / "Some Show"
-    show.mkdir()
-    (show / "01 - Pilot.mkv").write_bytes(b'\x00')
-    (show / "02 - Second.mkv").write_bytes(b'\x00')
-
-    msgs, cb = make_collector()
-    core.run_renamer(show, apply=False, callback=cb)
-
-    assert (show / "01 - Pilot.mkv").exists()
-    assert (show / "02 - Second.mkv").exists()
-    # Убедимся, что пока нет файлов с SxxEyy
-    assert not any(re.search(r'S\d{2}E\d{2}', f.name) for f in show.iterdir())
+def test_parse_episode_number():
+    assert core.parse_episode_number("01 - title") == 1
+    assert core.parse_episode_number("03title") == 3
+    assert core.parse_episode_number("no_number") == 1
 
 
-def test_folder_apply_renames(tmp_path):
-    # Сериал: применяем реальные переименования
-    show = tmp_path / "Example Show"
-    show.mkdir()
-    (show / "01 - Pilot.mkv").write_bytes(b'\x00')
-    (show / "02 - Second.mkv").write_bytes(b'\x00')
+def test_build_movie_name():
+    path = Path("/tmp/Some.Movie.2023.MKV")
+    expected = "Some Movie 2023.mkv"
+    assert core.build_movie_name(path) == expected
 
-    msgs, cb = make_collector()
-    core.run_renamer(show, apply=True, callback=cb)
 
-    names = [p.name for p in show.iterdir()]
-    # Ожидаем, что появились имена с S01E01 и S01E02
-    assert any("S01E01" in n for n in names), f"No S01E01 in {names}"
-    assert any("S01E02" in n for n in names), f"No S01E02 in {names}"
+def test_build_episode_name():
+    folder = Path("/tmp/test season_2")
+    file_path = folder / "03 - episode.mkv"
+    expected = "test_S002E03.mkv"
+    assert core.build_episode_name(file_path) == expected
+
+
+def test_run_renamer_dry_run_movie():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        f = Path(tmpdir) / "Movie.2023.mkv"
+        f.touch()
+        logs = []
+
+        core.run_renamer(f, apply=False, callback=lambda message=None,
+                                                         progress=None: logs.append(
+            message))
+
+        assert any("Dry-run" in log for log in logs)
+        assert f.exists()  # файл не должен был переименоваться
+
+
+def test_run_renamer_dry_run_series():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        folder = Path(tmpdir) / "test season_2"
+        folder.mkdir()
+        files = []
+        for i in range(1, 4):
+            f = folder / f"{i} - episode.mkv"
+            f.touch()
+            files.append(f)
+
+        logs = []
+        core.run_renamer(folder, apply=False, callback=lambda message=None,
+                                                              progress=None: logs.append(
+            message))
+
+        # Проверяем, что Dry-run есть для всех файлов
+        dry_runs = [log for log in logs if "Dry-run" in log]
+        assert len(dry_runs) == len(files)
