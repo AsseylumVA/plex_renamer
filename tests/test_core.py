@@ -10,12 +10,26 @@ def test_clean_for_title_and_parse_season():
     assert core.parse_season_number("S03") == 3
     assert core.parse_season_number("s 4") == 4
     assert core.parse_season_number("Show") == 1  # если нет сезона
+    real_show_name = "Itai no wa Iya nano de Bougyoryokuni " \
+                     "Kyokufuri Shitai to Omoimasu 2 " \
+                     " - AniLibria.TV [WEBRip 1080p HEVC]"
+    assert core.parse_season_number(real_show_name) == 2
+    real_show_name = "Sono_Bisque_Doll_wa_Koi_wo_Suru_S01_2022"
+    assert core.parse_season_number(real_show_name) == 1
 
 
 def test_parse_episode_number():
     assert core.parse_episode_number("01 - title") == 1
     assert core.parse_episode_number("03title") == 3
     assert core.parse_episode_number("no_number") == 1
+    real_episode_number1 = "Itai_no_wa_Iya_nano_de_Bougyoryoku"\
+                          "_ni_Kyokufuri_Shitai_to_Omoimasu_2_[01]"\
+                          "_[AniLibria_TV]_[WEBRip_1080p_HEVC]"
+    assert core.parse_episode_number(real_episode_number1) == 1
+    real_episode_number2 = "[Deadmau-RAWS] Sono.Bisque.Doll.wa.Koi."\
+                           "wo.Suru.S01.2022.BDRip.1080p.x264.FLAC."\
+                           "Deadmauvlad.Ep.04"
+    assert core.parse_episode_number(real_episode_number2) == 4
 
 
 def test_build_movie_name():

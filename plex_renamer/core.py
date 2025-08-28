@@ -13,17 +13,43 @@ def clean_for_title(s: str) -> str:
 
 
 def parse_season_number(folder_name: str) -> int:
-    """Попытка достать номер сезона из имени папки"""
+    """Извлекает номер сезона из имени папки"""
+    # Ищем явное указание сезона (например, "Season 2" или "S2")
     m = re.search(r'(?i)(?:season|s)[ _]?(\d+)', folder_name)
     if m:
         return int(m.group(1))
+
+    # Ищем число в конце строки перед разделителями (например, дефис или скобка)
+    m = re.search(r'(\d{1,2})\s*[\]\)\-_\s]', folder_name)
+    if m:
+        return int(m.group(1))
+
     return 1
 
 
 def parse_episode_number(filename: str) -> int:
-    """Попытка достать номер эпизода из имени файла"""
-    m = re.search(r'(\d{1,3})', filename)
-    return int(m.group(1)) if m else 1
+    """Извлекает номер эпизода из имени файла"""
+    # Ищем число в квадратных скобках
+    m = re.search(r'\[(\d{1,2})\]', filename)
+    if m:
+        return int(m.group(1))
+
+    # Ищем число между подчеркиваниями
+    m = re.search(r'_(\d{1,2})_', filename)
+    if m:
+        return int(m.group(1))
+
+    # Ищем число после маркеров "Ep" или "Episode"
+    m = re.search(r'(?i)(?:ep|episode)[ ._-]*(\d{1,2})', filename)
+    if m:
+        return int(m.group(1))
+
+    # Ищем число в начале строки (после не-цифровых символов)
+    m = re.search(r'^(\D*)(\d{1,2})(?=\D|$)', filename)
+    if m:
+        return int(m.group(2))
+
+    return 1
 
 
 def build_movie_name(file_path: Path) -> str:
