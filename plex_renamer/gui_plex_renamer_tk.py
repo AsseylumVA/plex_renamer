@@ -4,7 +4,7 @@ import threading
 import sys
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout,
-    QLineEdit, QPushButton, QTextEdit, QFileDialog, QCheckBox, QLabel,
+    QLineEdit, QPushButton, QTextEdit, QFileDialog, QLabel,
     QProgressBar
 )
 from PyQt6.QtCore import QObject, pyqtSignal, Qt
@@ -42,20 +42,20 @@ class PlexRenamerGUI(QWidget):
         path_layout.addWidget(self.path_edit)
         path_layout.addWidget(self.choose_btn)
 
-        # Options
-        opts_layout = QHBoxLayout()
-        self.apply_check = QCheckBox("Применить изменения (--apply)")
-        opts_layout.addWidget(self.apply_check)
-        opts_layout.addStretch()
-
-        # Buttons start/stop
+        # Buttons: Dry-run / Apply / Stop
         btn_layout = QHBoxLayout()
-        self.start_btn = QPushButton("Запустить")
-        self.start_btn.clicked.connect(self.start_worker)
+        self.dry_run_btn = QPushButton("Показать переименование (Dry-run)")
+        self.dry_run_btn.clicked.connect(
+            lambda: self.start_worker(dry_run=True))
+        self.apply_btn = QPushButton("Переименовать файлы")
+        self.apply_btn.clicked.connect(
+            lambda: self.start_worker(dry_run=False))
         self.stop_btn = QPushButton("Остановить")
         self.stop_btn.clicked.connect(self.request_stop)
         self.stop_btn.setEnabled(False)
-        btn_layout.addWidget(self.start_btn)
+
+        btn_layout.addWidget(self.dry_run_btn)
+        btn_layout.addWidget(self.apply_btn)
         btn_layout.addWidget(self.stop_btn)
         btn_layout.addStretch()
 
@@ -71,7 +71,6 @@ class PlexRenamerGUI(QWidget):
         # Main layout
         main_layout = QVBoxLayout()
         main_layout.addLayout(path_layout)
-        main_layout.addLayout(opts_layout)
         main_layout.addLayout(btn_layout)
         main_layout.addWidget(QLabel("Прогресс:"))
         main_layout.addWidget(self.progress_bar)
@@ -106,22 +105,21 @@ class PlexRenamerGUI(QWidget):
                 path = selected[0]
                 self.path_edit.setText(path)
 
-    def start_worker(self):
+    def start_worker(self, dry_run: bool):
         path = self.path_edit.text().strip()
         if not path:
             self.append_log("❌ Укажите путь до файла или папки.")
             return
 
-        apply_flag = self.apply_check.isChecked()
-        self.start_btn.setEnabled(False)
-        self.stop_btn.setEnabled(True)
-        self.choose_btn.setEnabled(False)
-        self.apply_check.setEnabled(False)
+        self._set_ui_running(True)
         self.progress_bar.setValue(0)
         self.stop_event.clear()
 
-        t = threading.Thread(target=self._worker_thread,
-                             args=(path, apply_flag), daemon=True)
+        t = threading.Thread(
+            target=self._worker_thread,
+            args=(path, not dry_run),  # apply = not dry_run
+            daemon=True
+        )
         t.start()
 
     def request_stop(self):
@@ -145,13 +143,13 @@ class PlexRenamerGUI(QWidget):
             self.emitter.log.emit(f"❗ Ошибка: {e}")
         finally:
             from PyQt6.QtCore import QTimer
-            QTimer.singleShot(0, self._reenable_ui)
+            QTimer.singleShot(0, lambda: self._set_ui_running(False))
 
-    def _reenable_ui(self):
-        self.start_btn.setEnabled(True)
-        self.stop_btn.setEnabled(False)
-        self.choose_btn.setEnabled(True)
-        self.apply_check.setEnabled(True)
+    def _set_ui_running(self, running: bool):
+        self.dry_run_btn.setEnabled(not running)
+        self.apply_btn.setEnabled(not running)
+        self.stop_btn.setEnabled(running)
+        self.choose_btn.setEnabled(not running)
 
 
 def main():
